@@ -17,69 +17,55 @@ from PIL import Image
 
 
 batch_size = 32
-image_size = 224
+Image_resolution = 224
 class_names = {}
 
 
-def format_image(image):
-    image = tf.cast(image, tf.float32)
-    image = tf.image.resize(image, (image_size, image_size))
-    image /= 255
-    return image
-
-def load_model(saved_keras_model_filepath):
-    loaded_model = tf.keras.models.load_model(saved_keras_model_filepath, custom_objects={'KerasLayer':hub.KerasLayer})
-    return loaded_model
-
+def process_np_image(img):
+    processed_image = tf.convert_to_tensor(img, dtype=tf.float32)
+    processed_image = tf.image.resize(processed_image, (Image_resolution, Image_resolution))
+    processed_image /= 255
+    return processed_image.numpy()
 def predict(image_path, model, top_k):
-    image = Image.open(image_path)
-    image = np.asarray(image)
-    image = format_image(image)
-    expanded_image = np.expand_dims(image, axis=0)
-    prob_list = model.predict(expanded_image)
-    classes = []
-    probs = []
-    rank = prob_list[0].argsort()[::-1]
-    for i in range(top_k):
-        
-        index = rank[i] + 1
-        cls = class_names[str(index)]
-        
-        probs.append(prob_list[0][index])
-        classes.append(cls)
-    
-    return probs, classes
-    
-    
+    image = Image.open(image_path)# opens the image
+    Numpy_test_image = np.asarray(image)#convert the input to array
+    Numpy_test_image_proccessed = process_np_image(Numpy_test_image)# do the normal normalizing
+    expanded_image = np.expand_dims(Numpy_test_image_proccessed, axis=0)# takes and array and the place of the axis that we will expand on
+    # change from (224, 224) to (1, 224, 224)
+    probes = model.predict(expanded_image)
+    top_k_values, top_k_indices = tf.nn.top_k(probes, k=top_k)
+    data = []
+    for value in top_k_indices.cpu().numpy()[0]:
+        data.append(class_names[str(value+1)])
+    return top_k_values.numpy()[0], data
 if __name__ == '__main__':
     print('predict.py, running')
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('arg1')
-    parser.add_argument('arg2')
-    parser.add_argument('--top_k')
-    parser.add_argument('--category_names') 
+    parser.add_argument('--image_dir',default='./test_images/hard-leaved_pocket_orchid.jpg')
+    parser.add_argument('--model',default='my_model_1618776856.h5')
+    parser.add_argument('--top_k',default = 5)
+    parser.add_argument('--category_names',default = 'label_map.json') 
     
     
-    args = parser.parse_args()
-    print(args)
+    input_by_user = parser.parse_args()
+    print(input_by_user)
     
-    print('arg1:', args.arg1)
-    print('arg2:', args.arg2)
-    print('top_k:', args.top_k)
-    print('category_names:', args.category_names)
+    print('image_dir:', input_by_user.image_dir)
+    print('model:', input_by_user.model)
+    print('top_k:', input_by_user.top_k)
+    print('category_names:', input_by_user.category_names)
     
-    image_path = args.arg1
-    
-    model = load_model('my_model.h5')
-    top_k = args.top_k
-
-    if top_k is None: 
-        top_k = 5
-
-    with open('label_map.json', 'r') as f:
-  	  class_names = json.load(f)   
-    probs, classes = predict(image_path, model, top_k)
-    
+    image_path = input_by_user.image_dir
+    model_path = input_by_user.model
+    Max_output = input_by_user.top_k
+    classes    = input_by_user.category_names
+    with open(classes, 'r') as f:
+      class_names = json.load(f)
+    if Max_output is None: 
+        Max_output = 5
+    model =  tf.keras.models.load_model(model_path,custom_objects={'KerasLayer':hub.KerasLayer})
+    probs, classes = predict(image_path, model, Max_output)
     print(probs)
     print(classes)
+    print("The expexted result is",image_path)
